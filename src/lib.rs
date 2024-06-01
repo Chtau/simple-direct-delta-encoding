@@ -48,6 +48,7 @@ impl SimpleDirectDeltaEncoding {
         
         let mut diff_data: Vec<u8> = vec![self.crc.digest_length as u8];
         diff_data.extend(self.crc.digest_value.clone());
+        //println!("Head: {:?}", diff_data);
         for diff in last_diff.iter() {
             let bytes = diff.to_bytes();
             diff_data.extend(Difference::get_usize_type_to_bytes(bytes.len()));
@@ -59,11 +60,11 @@ impl SimpleDirectDeltaEncoding {
     pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<u8>, SDDEError> {
         let crc_length = diff_data[0];
         let crc_value = &diff_data[1..(1 + crc_length as usize)];
-        let diff_bytes = &diff_data[(1 + crc_length as usize)..];
         let crc = DispnetHash::create(HashType::CRC, &self.data, None);
         if crc.digest_value != crc_value {
             return Err(SDDEError::CRC("CRC value does not match".to_owned()));
         }
+        let diff_bytes = &diff_data[(1 + crc_length as usize)..];
 
         let mut diffs: Vec<Difference> = Vec::new();
         let mut i = 0;
