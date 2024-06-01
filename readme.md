@@ -1,0 +1,1 @@
+# Delta encoding
