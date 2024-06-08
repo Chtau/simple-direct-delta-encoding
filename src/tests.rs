@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod test {
+mod patch_data {
     use crate::SimpleDirectDeltaEncoding;
 
     #[test]

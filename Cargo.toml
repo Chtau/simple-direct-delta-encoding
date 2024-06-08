@@ -7,3 +7,10 @@ edition = "2021"
 
 [dependencies]
 dispnet-hash = "0.4.0"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "patching"
+harness = false
