@@ -27,7 +27,7 @@ impl From<DifferenceAction> for u8 {
 }
 
 /// range indicator start-length (in byte conversion a prefix is used for the usize type [implicit if no other short key matches it is default u8 value])
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Range {
     pub start: usize,
     pub length: usize,
@@ -76,12 +76,22 @@ impl From<USizeType> for u8 {
     }
 }
 
-#[derive(Debug)]
 pub struct Difference {
     pub action: DifferenceAction,
     pub range: Range,
     pub value: Vec<u8>,
     pub is_open: bool,
+}
+
+impl std::fmt::Debug for Difference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Difference")
+            .field("action", &self.action)
+            .field("range", &self.range)
+            .field("value", &self.value.len())
+            .field("is_open", &self.is_open)
+            .finish()
+    }
 }
 
 impl Difference {
@@ -165,6 +175,10 @@ impl DataDifference {
 
                     if let Some(diff) = differences.last_mut() {
                         if !diff.is_open {
+                            if same_count > 0 {
+                                same_count = 0;
+                                same_byte_buffer.clear();
+                            }
                             differences.push(Difference {
                                 action: DifferenceAction::Replace,
                                 range: Range::new(i, 1),
@@ -183,6 +197,10 @@ impl DataDifference {
                             diff.range.length += 1;
                         }
                     } else {
+                        if same_count > 0 {
+                            same_count = 0;
+                            same_byte_buffer.clear();
+                        }
                         differences.push(Difference {
                             action: DifferenceAction::Replace,
                             range: Range::new(i, 1),
@@ -211,6 +229,10 @@ impl DataDifference {
                 // insert action
                 if let Some(diff) = differences.last_mut() {
                     if !diff.is_open {
+                        if same_count > 0 {
+                            same_count = 0;
+                            same_byte_buffer.clear();
+                        }
                         differences.push(Difference {
                             action: DifferenceAction::Insert,
                             range: Range::new(i, 1),
@@ -236,6 +258,10 @@ impl DataDifference {
                         }
                     }
                 } else {
+                    if same_count > 0 {
+                        same_count = 0;
+                        same_byte_buffer.clear();
+                    }
                     differences.push(Difference {
                         action: DifferenceAction::Insert,
                         range: Range::new(i, 1),
@@ -268,13 +294,9 @@ impl DataDifference {
         let mut data = data.to_vec();
         for d in diff {
             if d.action == DifferenceAction::Replace {
-                data[d.range.start..(d.range.start + d.range.length)].copy_from_slice(&d.value);       
+                data[d.range.start..(d.range.start + d.range.length)].copy_from_slice(&d.value);
             } else if d.action == DifferenceAction::Insert {
-                if data.len() > d.range.start {
-                    data[d.range.start..(d.range.start + 1)].copy_from_slice(&d.value);
-                } else {
-                    data.extend_from_slice(&d.value);
-                }
+                data.extend_from_slice(&d.value);
             } else if d.action == DifferenceAction::Delete {
                 data.drain(d.range.start..(d.range.start + d.range.length));
             }

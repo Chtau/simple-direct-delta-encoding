@@ -19,11 +19,25 @@ mod test {
         let data = sdd2.apply_patch(&diff_data).ok();
         assert_eq!(sdd.data, data.unwrap());
     }
+    
+    #[test]
+    fn apply_patch_data_1() {
+        let mut sdd = SimpleDirectDeltaEncoding::new("Test".as_bytes().to_vec());
+        let new_data = "TesNN".as_bytes();
+        let diff_data = sdd.patch(new_data);
+        let mut sdd2 = SimpleDirectDeltaEncoding::new("Test".as_bytes().to_vec());
+        let data = sdd2.apply_patch(&diff_data).ok();
+        assert_eq!(sdd.data, data.unwrap());
+    }
 
     #[test]
     fn apply_patch_data_from_text_files() {
-        apply_diff_from_file("text_og.txt", "text_diff.txt");
-        apply_diff_from_file("text_og.txt", "text_diff_2.txt");
+        apply_diff_from_file("text_1.txt", "text_2.txt");
+        apply_diff_from_file("text_1.txt", "text_3.txt");
+        apply_diff_from_file("text_2.txt", "text_1.txt");
+        apply_diff_from_file("text_2.txt", "text_3.txt");
+        apply_diff_from_file("text_3.txt", "text_1.txt");
+        apply_diff_from_file("text_3.txt", "text_2.txt");
     }
 
     fn apply_diff_from_file(file_og: &str, file_diff: &str) -> bool {
@@ -42,7 +56,10 @@ mod test {
         
         let mut sdd2 = SimpleDirectDeltaEncoding::new(diff_data_from_file.clone());
         let data = sdd2.apply_patch(&diff_data).ok();
-        assert_eq!(sdd.data, data.unwrap());
+
+        let sdd2_data = data.unwrap();
+        assert_eq!(sdd.data.len(), sdd2_data.len());
+        assert_eq!(sdd.data, sdd2_data);
         true
     }
 }

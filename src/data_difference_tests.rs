@@ -28,6 +28,16 @@ mod test {
         println!("{:?} String: {:?}", diff, std::str::from_utf8(&diff.last().unwrap().value).unwrap());
         assert_eq!(diff.last().unwrap().to_bytes(), vec![b'd', b':', 4, b'-', 1]);
     }
+            
+    #[test]
+    fn diff_mix_multi_action() {
+        let data_old = "Test".as_bytes();
+        let data_new = "TesNN".as_bytes();
+        let diff = DataDifference::diff(data_old, data_new);
+        println!("{:?} String: {:?}", diff, std::str::from_utf8(&diff.last().unwrap().value).unwrap());
+        assert_eq!(diff[0].to_bytes(), vec![b'r', b':', 3, b'-', 1, b'N']);
+        assert_eq!(diff[1].to_bytes(), vec![b'i', b':', 4, b'-', 1, b'N']);
+    }
     
     #[test]
     fn diff_replace_action_with_same_inbetween() {
@@ -207,5 +217,15 @@ mod test {
         let data = data_old.to_owned();
         let data = DataDifference::apply_diff(&data, &diff);
         assert_eq!(data, data_new);
+    }
+        
+    #[test]
+    fn apply_diff_multi_action() {
+        let data_old = "Test".as_bytes();
+        let data_new = "TesNN".as_bytes();
+        let diff = DataDifference::diff(data_old, data_new);
+        let data = data_old.to_owned();
+        let data = DataDifference::apply_diff(&data, &diff);
+        assert_eq!(data_new, data);
     }
 }
