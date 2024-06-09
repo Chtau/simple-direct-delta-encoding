@@ -29,6 +29,7 @@ body {
     display: flex;
     max-width: calc(100vw / 3);
     position: relative;
+    flex-direction: column;
 }
 
 .section:not(:last-child) {
@@ -56,12 +57,12 @@ body {
 .tabs button {
     flex-grow: 1;
     padding: 10px;
-    background-color: #1e1e1e;
+    background-color: #333333;
     color: #ffffff;
     border: none;
     cursor: pointer;
 }
 
 .tabs button.active {
-    background-color: #333333;
+    background-color: #1e1e1e;
 }

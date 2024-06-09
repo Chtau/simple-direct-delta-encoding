@@ -1,5 +1,3 @@
-use std::{borrow::BorrowMut, ops::Deref};
-
 use delta_encoding::SimpleDirectDeltaEncoding;
 use yew::prelude::*;
 use wasm_bindgen::{JsCast, JsValue};
@@ -9,7 +7,9 @@ fn App() -> Html {
     let active_tab = use_state(|| String::from("result"));
     let input_ref = use_node_ref();
     let current_input = use_state(String::new);
-    //let encoding = use_state(|| SimpleDirectDeltaEncoding::new(Vec::new()));
+    let encoding_data_bytes = use_state(Vec::new);
+    let current_diffs = use_state(Vec::new);
+    let current_patch = use_state(Vec::new);
 
     let active_tab_signal = active_tab.clone();
     let switch_tab = Callback::from({move |tab: String| {
@@ -22,11 +22,23 @@ fn App() -> Html {
         Callback::from(move |_| {
             if let Some(input) = input_ref.get().expect("Input element should exist").dyn_ref::<web_sys::HtmlElement>() {
                 let content = input.inner_text();
-                web_sys::console::log_1(&JsValue::from_str(&content));
+                //web_sys::console::log_1(&JsValue::from_str(&content));
                 current_input.set(content);
             }
         })
     };
+
+    let mut enc = SimpleDirectDeltaEncoding::new((*encoding_data_bytes).clone());
+    //web_sys::console::log_1(&JsValue::from_str(&(format!("Data len: {}", enc.data.len()))));
+    let patch = enc.patch((*current_input).as_bytes());
+    if enc.data != (*encoding_data_bytes) {
+        encoding_data_bytes.set(enc.data.clone());
+        let diffs = if SimpleDirectDeltaEncoding::validate_patch_differences(&patch).is_ok() {
+            SimpleDirectDeltaEncoding::get_differences(&patch) 
+        } else { Vec::new() };
+        current_diffs.set(diffs);
+        current_patch.set(patch.clone());
+    }
 
     html! {
         <div>
@@ -37,8 +49,9 @@ fn App() -> Html {
             </div>
             <div class="content">
                 <div class="section">
+                    <p>{"Previous data"}</p>
                     <div class="padded full">
-                        {"Previous data"}
+                        { format!("{:?}", String::from_utf8(enc.data.clone()).expect("Failed to convert data to string")) }
                     </div>
                 </div>
                 <div class="section">
@@ -49,7 +62,7 @@ fn App() -> Html {
                         </div>
                     </div>
                 </div>
-                <div class="section" style="flex-direction: column;">
+                <div class="section">
                     <div class="tabs">
                         <button onclick={{
                             let switch_tab = switch_tab.clone();
@@ -63,9 +76,17 @@ fn App() -> Html {
                     </div>
                     <div class="padded full">
                         {if *active_tab == "result" {
-                            html! { <div>{"Result content goes here"}</div> }
+                            html! { <div>{
+                                current_diffs.iter().map(|diff| {
+                                    html! { <div>
+                                        { format!("{:?}", diff) }
+                                    </div> }
+                                }).collect::<Html>()
+                            }</div> }
                         } else {
-                            html! { <div>{"Raw Patch content goes here"}</div> }
+                            html! { <div>
+                                { format!("{:?}", (*current_patch).clone()) }
+                            </div> }
                         }}
                     </div>
                 </div>

@@ -1,3 +1,5 @@
+use crate::SDDEError;
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DifferenceAction {
     Replace,
@@ -5,7 +7,7 @@ pub enum DifferenceAction {
     Delete,
 }
 
-impl From<u8> for DifferenceAction {
+/*impl From<u8> for DifferenceAction {
     fn from(value: u8) -> Self {
         match value {
             b'r' => DifferenceAction::Replace,
@@ -14,7 +16,7 @@ impl From<u8> for DifferenceAction {
             _ => panic!("Invalid difference action")
         }
     }
-}
+}*/
 
 impl From<DifferenceAction> for u8 {
     fn from(val: DifferenceAction) -> Self {
@@ -22,6 +24,19 @@ impl From<DifferenceAction> for u8 {
             DifferenceAction::Replace => b'r',
             DifferenceAction::Insert => b'i',
             DifferenceAction::Delete => b'd',
+        }
+    }
+}
+
+impl TryInto<DifferenceAction> for u8 {
+    type Error = SDDEError;
+
+    fn try_into(self) -> Result<DifferenceAction, Self::Error> {
+        match self {
+            b'r' => Ok(DifferenceAction::Replace),
+            b'i' => Ok(DifferenceAction::Insert),
+            b'd' => Ok(DifferenceAction::Delete),
+            _ => Err(SDDEError::DifferenceInvalid(format!("Invalid difference action. Byte: {:?}", self)))
         }
     }
 }
@@ -109,7 +124,7 @@ impl Difference {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let action: DifferenceAction = bytes[0].into();
+        let action: DifferenceAction = bytes[0].try_into().ok().unwrap();
         let range_start = Self::get_usize_type_from_bytes(&bytes[2..]);
         let offset = 2 + range_start.1 + 1; // 2 bytes for action and range start, range start bytes count, 1 byte for range separator
         let range_end = Self::get_usize_type_from_bytes(&bytes[offset..]);
@@ -122,6 +137,27 @@ impl Difference {
             value,
             is_open,
         }
+    }
+
+    pub fn validate_from_bytes(bytes: &[u8]) -> Result<Self, SDDEError> {
+        let action_byte = bytes[0];
+        let action_result = action_byte.try_into();
+        if action_result.is_err() {
+            return Err(action_result.err().unwrap());
+        }
+
+        let range_start = Self::get_usize_type_from_bytes(&bytes[2..]);
+        let offset = 2 + range_start.1 + 1; // 2 bytes for action and range start, range start bytes count, 1 byte for range separator
+        let range_end = Self::get_usize_type_from_bytes(&bytes[offset..]);
+        let offset = offset + range_end.1;
+        let value = bytes[offset..].to_vec();
+        let is_open = false;
+        Ok(Self {
+            action: action_result.ok().unwrap(),
+            range: Range::new(range_start.0, range_end.0),
+            value,
+            is_open,
+        })
     }
 
     pub fn get_usize_type_to_bytes(value: usize) -> Vec<u8> {
