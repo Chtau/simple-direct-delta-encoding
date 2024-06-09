@@ -71,20 +71,8 @@ impl SimpleDirectDeltaEncoding {
         if crc.digest_value != crc_value {
             return Err(SDDEError::CRC("CRC value does not match".to_owned()));
         }
-        let diff_bytes = &diff_data[(1 + crc_length as usize)..];
 
-        /*let mut diffs: Vec<Difference> = Vec::new();
-        let mut i = 0;
-        while i < diff_bytes.len() {
-            let diff_length = Difference::get_usize_type_from_bytes(&diff_bytes[i..]);
-            i += diff_length.1;
-            let bytes = &diff_bytes[i..(i + diff_length.0)];
-            let diff = Difference::from_bytes(bytes);
-            i += diff_length.0;
-            diffs.push(diff);
-        }*/
-
-        let diffs = Self::get_differences(diff_bytes);
+        let diffs = Self::get_differences(diff_data);
 
         let data = DataDifference::apply_diff(&self.data, &diffs);
         self.data = data;

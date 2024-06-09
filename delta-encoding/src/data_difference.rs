@@ -7,17 +7,6 @@ pub enum DifferenceAction {
     Delete,
 }
 
-/*impl From<u8> for DifferenceAction {
-    fn from(value: u8) -> Self {
-        match value {
-            b'r' => DifferenceAction::Replace,
-            b'i' => DifferenceAction::Insert,
-            b'd' => DifferenceAction::Delete,
-            _ => panic!("Invalid difference action")
-        }
-    }
-}*/
-
 impl From<DifferenceAction> for u8 {
     fn from(val: DifferenceAction) -> Self {
         match val {
