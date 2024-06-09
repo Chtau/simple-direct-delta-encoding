@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use simple_direct_delta_encoding::SimpleDirectDeltaEncoding;
+use delta_encoding::SimpleDirectDeltaEncoding;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let current_dir = std::env::current_dir().expect("Failed to get current directory");

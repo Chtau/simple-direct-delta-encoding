@@ -1,0 +1,13 @@
+[package]
+name = "web-page"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+yew = { version = "0.21.0", features = ["csr"] }
+wasm-bindgen = { version = "0.2" }
+web-sys = { version = "*" }
+
+delta-encoding = { path = "../delta-encoding" }
