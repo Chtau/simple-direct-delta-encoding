@@ -187,6 +187,7 @@ impl DataDifference {
                             });
                         } else {
                             // if we have a same byte buffer, we append it to the value
+                            // TODO: have a sensible limit for the same byte buffer
                             if same_count > 0 {
                                 diff.value.extend(same_byte_buffer.clone());
                                 diff.range.length += same_count;
