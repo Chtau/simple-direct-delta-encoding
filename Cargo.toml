@@ -1,5 +1,5 @@
 [workspace]
 
 members = [
-    "delta-encoding",
+    "delta_encoding",
 ]
