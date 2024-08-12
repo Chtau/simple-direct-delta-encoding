@@ -55,7 +55,6 @@ impl SimpleDirectDeltaEncoding {
 
         let mut diff_data: Vec<u8> = vec![self.crc.len() as u8];
         diff_data.extend(self.crc.clone());
-        //println!("Head: {:?}", diff_data);
         for diff in last_diff.iter() {
             let bytes = diff.to_bytes();
             diff_data.extend(Difference::get_usize_type_to_bytes(bytes.len()));
@@ -82,9 +81,7 @@ impl SimpleDirectDeltaEncoding {
     }
 
     pub fn get_differences(diff_bytes: &[u8]) -> Vec<Difference> {
-        let crc_length = diff_bytes[0];
-        let _crc_value = &diff_bytes[1..(1 + crc_length as usize)];
-        let diff_bytes = &diff_bytes[(1 + crc_length as usize)..];
+        let diff_bytes = Self::get_differences_bytes_with_crc(diff_bytes);
         let mut diffs: Vec<Difference> = Vec::new();
         let mut i = 0;
         while i < diff_bytes.len() {
@@ -99,9 +96,7 @@ impl SimpleDirectDeltaEncoding {
     }
 
     pub fn validate_patch_differences(diff_bytes: &[u8]) -> Result<(), SDDEError> {
-        let crc_length = diff_bytes[0];
-        let _crc_value = &diff_bytes[1..(1 + crc_length as usize)];
-        let diff_bytes = &diff_bytes[(1 + crc_length as usize)..];
+        let diff_bytes = Self::get_differences_bytes_with_crc(diff_bytes);
         let mut i = 0;
         while i < diff_bytes.len() {
             let diff_length = Difference::get_usize_type_from_bytes(&diff_bytes[i..]);
@@ -114,5 +109,11 @@ impl SimpleDirectDeltaEncoding {
             i += diff_length.0;
         }
         Ok(())
+    }
+
+    pub fn get_differences_bytes_with_crc(diff_bytes: &[u8]) -> &[u8] {
+        let crc_length = diff_bytes[0];
+        let _crc_value = &diff_bytes[1..(1 + crc_length as usize)];
+        &diff_bytes[(1 + crc_length as usize)..]
     }
 }

@@ -92,7 +92,8 @@ impl std::fmt::Debug for Difference {
         f.debug_struct("Difference")
             .field("action", &self.action)
             .field("range", &self.range)
-            .field("value", &self.value.len())
+            .field("value_len", &self.value.len())
+            .field("utf8", &String::from_utf8(self.value.clone()))
             .field("is_open", &self.is_open)
             .finish()
     }
