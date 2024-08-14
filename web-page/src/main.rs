@@ -1,4 +1,6 @@
-use delta_encoding::SimpleDirectDeltaEncoding;
+use std::collections::HashMap;
+
+use delta_encoding::{IndexedData, SimpleDirectDeltaEncoding};
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -83,8 +85,8 @@ fn GeneratePatch() -> Html {
     let previous_data_ref = use_node_ref();
     let input_ref = use_node_ref();
     let current_input = use_state(String::new);
-    let encoding_data_bytes = use_state(Vec::new);
-    let current_diffs = use_state(Vec::new);
+    let encoding_data_bytes: UseStateHandle<HashMap<u8, IndexedData>> = use_state(HashMap::new);
+    let current_diffs = use_state(HashMap::new);
     let current_patch = use_state(Vec::new);
     let current_byte_size = use_state(|| 0);
     let samples: UseStateHandle<Vec<(&str, &str, &str, &str)>> = use_state(|| {
@@ -187,15 +189,24 @@ fn GeneratePatch() -> Html {
         Vec::new()
     };
 
-    let mut enc = SimpleDirectDeltaEncoding::new(prev_data);
-    let patch = enc.patch((*current_input).as_bytes());
+    let mut enc = SimpleDirectDeltaEncoding::new(&[IndexedData::new(0, prev_data)]);
+    let patch = enc.patch(&[IndexedData::new(0, (*current_input).as_bytes().to_vec())]);
 
-    if enc.data != (*encoding_data_bytes) {
-        encoding_data_bytes.set(enc.data.clone());
+    let enc_data = enc.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
+        acc.extend(indexed_data.data.clone());
+        acc
+    });
+    let encoding_data = (*encoding_data_bytes).values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
+        acc.extend(indexed_data.data.clone());
+        acc
+    });
+
+    if enc_data != encoding_data {
+        encoding_data_bytes.set(enc.data_collection);
         let diffs = if SimpleDirectDeltaEncoding::validate_patch_differences(&patch).is_ok() {
             SimpleDirectDeltaEncoding::get_differences(&patch)
         } else {
-            Vec::new()
+            HashMap::new()
         };
         current_diffs.set(diffs);
         current_patch.set(patch.clone());
@@ -284,26 +295,26 @@ fn ApplyPatch() -> Html {
                 "1",
                 "Test insert",
                 "test",
-                "[10, 50, 50, 53, 56, 54, 54, 50, 48, 56, 48, 6, 105, 58, 4, 45, 1, 49]",
+                "[10, 50, 50, 53, 56, 54, 54, 50, 48, 56, 48, 118, 0, 6, 105, 58, 4, 45, 1, 49]",
             ),
             (
                 "2",
                 "Test replace",
                 "test123",
-                "[10, 49, 55, 49, 56, 53, 50, 48, 49, 54, 49, 8, 114, 58, 4, 45, 3, 51, 50, 49]",
+                "[10, 49, 55, 49, 56, 53, 50, 48, 49, 54, 49, 118, 0, 8, 114, 58, 4, 45, 3, 51, 50, 49]",
             ),
-            ("3", "Test remove", "test1test", "[10, 50, 56, 56, 57, 48, 48, 52, 52, 53, 50, 5, 100, 58, 4, 45, 5]"),
+            ("3", "Test remove", "test1test", "[10, 50, 56, 56, 57, 48, 48, 52, 52, 53, 50, 118, 0, 5, 100, 58, 4, 45, 5]"),
             (
                 "4",
                 "Json same size change",
                 "{ \"name\": \"John\", \"age\": 30 }",
-                "[10, 50, 56, 52, 50, 56, 57, 51, 54, 52, 55, 9, 114, 58, 11, 45, 4, 87, 105, 108, 108, 7, 114, 58, 25, 45, 2, 50, 49]",
+                "[10, 50, 56, 52, 50, 56, 57, 51, 54, 52, 55, 118, 0, 9, 114, 58, 11, 45, 4, 87, 105, 108, 108, 7, 114, 58, 25, 45, 2, 50, 49]",
             ),
             (
                 "5",
                 "Json porperty size changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
-                "[10, 50, 56, 52, 50, 56, 57, 51, 54, 52, 55, 23, 114, 58, 11, 45, 18, 80, 97, 116, 114, 105, 99, 107, 34, 44, 32, 34, 97, 103, 101, 34, 58, 32, 57, 7, 105, 58, 29, 45, 2, 32, 125]",
+                "[10, 50, 56, 52, 50, 56, 57, 51, 54, 52, 55, 118, 0, 23, 114, 58, 11, 45, 18, 80, 97, 116, 114, 105, 99, 107, 34, 44, 32, 34, 97, 103, 101, 34, 58, 32, 57, 7, 105, 58, 29, 45, 2, 32, 125]",
             ),
         ]
     });
@@ -418,7 +429,7 @@ fn ApplyPatch() -> Html {
                 }
 
                 // apply patch
-                let mut enc = SimpleDirectDeltaEncoding::new(source.to_vec());
+                let mut enc = SimpleDirectDeltaEncoding::new(&[IndexedData::new(0, source.to_vec())]);
                 let apply_result = enc.apply_patch(&patch);
                 if let Err(err) = apply_result {
                     if let Some(input) = result_input_ref
