@@ -86,7 +86,7 @@ fn GeneratePatch() -> Html {
     let input_ref = use_node_ref();
     let current_input = use_state(String::new);
     let encoding_data_bytes: UseStateHandle<BTreeMap<u8, IndexedData>> = use_state(BTreeMap::new);
-    let current_diffs = use_state(HashMap::new);
+    let current_diffs = use_state(BTreeMap::new);
     let current_patch = use_state(Vec::new);
     let current_byte_size = use_state(|| 0);
     let samples: UseStateHandle<Vec<(&str, &str, &str, &str, usize)>> = use_state(|| {
@@ -302,7 +302,7 @@ fn GeneratePatch() -> Html {
         let diffs = if SimpleDirectDeltaEncoding::validate_patch_differences(&patch).is_ok() {
             SimpleDirectDeltaEncoding::get_differences(&patch)
         } else {
-            HashMap::new()
+            BTreeMap::new()
         };
         current_diffs.set(diffs);
         current_patch.set(patch.clone());

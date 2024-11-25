@@ -4,7 +4,7 @@ mod data_difference_tests;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use data_difference::*;
 use dispnet_hash::{DispnetHash, HashType};
@@ -25,6 +25,21 @@ pub struct SimpleDirectDeltaEncoding {
 pub struct IndexedData {
     pub index: u8,
     pub data: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+pub struct EntryDifference {
+    pub remove_entry: bool,
+    pub diffs: Vec<Difference>,
+}
+
+impl EntryDifference {
+    pub fn new(diffs: Vec<Difference>) -> EntryDifference {
+        EntryDifference {
+            remove_entry: false,
+            diffs,
+        }
+    }
 }
 
 impl IndexedData {
@@ -82,6 +97,7 @@ impl SimpleDirectDeltaEncoding {
     /// The Value is only present in the Replace and Insert actions
     pub fn patch(&mut self, new_data: &[IndexedData]) -> Vec<u8> {
         let new_data = Self::get_sorted(new_data);
+        let new_indexes: Vec<u8> = new_data.iter().map(|x| x.index).collect();
         // add the crc
         let mut diff_data: Vec<u8> = vec![self.crc.len() as u8];
         diff_data.extend(self.crc.clone());
@@ -90,16 +106,54 @@ impl SimpleDirectDeltaEncoding {
             if let Some(old_data) = self.data_collection.get_mut(&data.index) {
                 let last_diff = DataDifference::diff(&old_data.data, &data.data);
                 old_data.data = data.data.to_owned();
+                
+                // create the diff data for the index
+                let mut new_diff = Vec::new();
                 // set the index
-                diff_data.push(b'v');
-                diff_data.push(data.index);
+                new_diff.push(b'v');
+                new_diff.push(data.index);
                 for diff in last_diff.iter() {
                     let bytes = diff.to_bytes();
                     // add the difference
-                    diff_data.extend(Difference::get_usize_type_to_bytes(bytes.len()));
-                    diff_data.extend(bytes);
+                    new_diff.extend(Difference::get_usize_type_to_bytes(bytes.len()));
+                    new_diff.extend(bytes);
                 }
+                // only add the diff if there are any changes to the data (first 2 bytes are the index)
+                if new_diff.len() > 2 {
+                    diff_data.extend(new_diff);
+                }
+            } else {
+                // add the new data entry
+                self.data_collection.insert(data.index, data.clone());
+                // create the diff data for the index
+                let mut new_diff = Vec::new();
+                // set the index
+                new_diff.push(b'v');
+                new_diff.push(data.index);
+                for diff in DataDifference::diff(&Vec::new(), &data.data).iter() {
+                    let bytes = diff.to_bytes();
+                    // add the difference
+                    new_diff.extend(Difference::get_usize_type_to_bytes(bytes.len()));
+                    new_diff.extend(bytes);
+                }
+                diff_data.extend(new_diff);
             }
+        }
+
+        // check if there are indexes removed
+        let src_indexes: Vec<u8> = self.data_collection.keys().copied().collect();
+        let removed_indexes: Vec<u8> = src_indexes.iter().filter(|x| !new_indexes.contains(x)).copied().collect();
+
+        for index in removed_indexes {
+            // remove the index from the data collection
+            self.data_collection.remove(&index);
+
+            // add the remove index command to the patch           
+            diff_data.extend(vec![
+                b'v',
+                index,
+                b'r',
+            ]);
         }
 
         diff_data
@@ -115,10 +169,20 @@ impl SimpleDirectDeltaEncoding {
         }
 
         let diffs = Self::get_differences(diff_data);
+        println!("diffs: {:?}", diffs);
         for (index, diff) in diffs.iter() {
+            if diff.remove_entry {
+                self.data_collection.remove(index);
+                continue;
+            }
             if let Some(src_data) = self.data_collection.get_mut(index) {
-                let data = DataDifference::apply_diff(&src_data.data, diff);
+                let data = DataDifference::apply_diff(&src_data.data, &diff.diffs);
                 src_data.data = data;
+            } else {
+                // the index does not exist, add a new data entry
+                let new_data = Vec::new();
+                let data = DataDifference::apply_diff(&new_data, &diff.diffs);
+                self.data_collection.insert(*index, IndexedData::new(*index, data));
             }
         }
 
@@ -146,9 +210,10 @@ impl SimpleDirectDeltaEncoding {
         })
     }
 
-    pub fn get_differences(diff_bytes: &[u8]) -> HashMap<u8, Vec<Difference>> {
+    pub fn get_differences(diff_bytes: &[u8]) -> BTreeMap<u8, EntryDifference> {
         let diff_bytes = Self::get_differences_bytes_with_crc(diff_bytes);
-        let mut diffs: HashMap<u8, Vec<Difference>> = HashMap::new();
+        println!("diff bytes: {:?}", diff_bytes);
+        let mut diffs: BTreeMap<u8, EntryDifference> = BTreeMap::new();
         let mut i = 0;
         let mut index = 0;
         while i < diff_bytes.len() {
@@ -156,6 +221,12 @@ impl SimpleDirectDeltaEncoding {
             if diff_bytes[i] == b'v' {
                 index = diff_bytes[i + 1];
                 i += 2;    
+            }
+            println!("bytes: {:?}", &diff_bytes[i..]);
+            if diff_bytes[i] == b'r' {
+                i += 1;
+                diffs.insert(index, EntryDifference { remove_entry: true, diffs: Vec::new() });
+                continue;
             }
             
             let diff_length = Difference::get_usize_type_from_bytes(&diff_bytes[i..]);
@@ -165,9 +236,9 @@ impl SimpleDirectDeltaEncoding {
             i += diff_length.0;
             
             if let Some(d) = diffs.get_mut(&index) {
-                d.push(diff);
+                d.diffs.push(diff);
             } else {
-                diffs.insert(index, vec![diff]);
+                diffs.insert(index, EntryDifference::new(vec![diff]));
             }
         }
         diffs
