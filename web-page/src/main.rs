@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use delta_encoding::{IndexedData, SimpleDirectDeltaEncoding};
 use wasm_bindgen::JsCast;
@@ -85,7 +85,7 @@ fn GeneratePatch() -> Html {
     let previous_data_ref = use_node_ref();
     let input_ref = use_node_ref();
     let current_input = use_state(String::new);
-    let encoding_data_bytes: UseStateHandle<HashMap<u8, IndexedData>> = use_state(HashMap::new);
+    let encoding_data_bytes: UseStateHandle<BTreeMap<u8, IndexedData>> = use_state(BTreeMap::new);
     let current_diffs = use_state(HashMap::new);
     let current_patch = use_state(Vec::new);
     let current_byte_size = use_state(|| 0);
@@ -604,7 +604,7 @@ fn ApplyPatch() -> Html {
                             if let Ok(serde_json::Value::Object(map)) = a {
                                 for (index, (key, value)) in map.iter().enumerate() {
                                     let b = patched[index].clone();
-                                    result.push_str(&format!("\"{}\": {}", key, String::from_utf8(SimpleDirectDeltaEncoding::fold_bytes(&[b])).expect("Failed to convert patched data to string")));
+                                    result.push_str(&format!("\"{}\": {}", key, String::from_utf8(SimpleDirectDeltaEncoding::fold_indexes(&[b])).expect("Failed to convert patched data to string")));
                                     if index < map.len() - 1 {
                                         result.push_str(", ");
                                     }
@@ -616,7 +616,7 @@ fn ApplyPatch() -> Html {
                         }
                     } else {
                         input.set_inner_text(
-                            &String::from_utf8(SimpleDirectDeltaEncoding::fold_bytes(&patched))
+                            &String::from_utf8(SimpleDirectDeltaEncoding::fold_indexes(&patched))
                                 .expect("Failed to convert patched data to string"),
                         );
                     }
