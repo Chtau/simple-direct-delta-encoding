@@ -21,7 +21,7 @@ mod patch_data {
             acc.extend(indexed_data.data.clone());
             acc
         });
-        assert_eq!(sdd_data, data.unwrap());
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&data.unwrap()));
     }
     
     #[test]
@@ -35,7 +35,7 @@ mod patch_data {
             acc.extend(indexed_data.data.clone());
             acc
         });
-        assert_eq!(sdd_data, data.unwrap());
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&data.unwrap()));
     }
 
     #[test]
@@ -72,7 +72,7 @@ mod patch_data {
             acc
         });
         assert_eq!(sdd_data.len(), sdd2_data.len());
-        assert_eq!(sdd_data, sdd2_data);
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&sdd2_data));
         true
     }
 }

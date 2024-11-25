@@ -21,7 +21,7 @@ pub struct SimpleDirectDeltaEncoding {
     pub crc: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IndexedData {
     pub index: u8,
     pub data: Vec<u8>,
@@ -102,7 +102,7 @@ impl SimpleDirectDeltaEncoding {
         diff_data
     }
 
-    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<u8>, SDDEError> {
+    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<Vec<u8>>, SDDEError> {
         let crc_length = diff_data[0];
         let crc_value = &diff_data[1..(1 + crc_length as usize)];
         let bytes = Self::fold_indexed_data(self.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice());
@@ -121,8 +121,19 @@ impl SimpleDirectDeltaEncoding {
 
         self.crc = crc.digest_value.clone();
 
-        let bytes = Self::fold_indexed_data(self.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice());
-        Ok(bytes)
+        // return the data in order
+        let mut data: Vec<Vec<u8>> = Vec::new();
+        for (_index, d) in self.data_collection.iter() {
+            data.push(d.data.clone());
+        }
+        Ok(data)
+    }
+
+    pub fn fold_bytes(bytes: &[Vec<u8>]) -> Vec<u8> {
+        bytes.iter().fold(Vec::new(), |mut acc, byte| {
+            acc.extend(byte.clone());
+            acc
+        })
     }
 
     pub fn get_differences(diff_bytes: &[u8]) -> HashMap<u8, Vec<Difference>> {

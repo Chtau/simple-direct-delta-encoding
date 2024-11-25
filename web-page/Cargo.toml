@@ -11,5 +11,6 @@ yew-router = { version = "0.18" }
 yew-hooks = { version = "*" }
 wasm-bindgen = { version = "0.2" }
 web-sys = { version = "*", features = ["HtmlSelectElement"]}
+serde_json = { version = "*" }
 
 delta-encoding = { path = "../delta-encoding" }
