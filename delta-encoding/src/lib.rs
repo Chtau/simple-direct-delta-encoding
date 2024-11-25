@@ -4,7 +4,7 @@ mod data_difference_tests;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use data_difference::*;
 use dispnet_hash::{DispnetHash, HashType};
@@ -17,7 +17,7 @@ pub enum SDDEError {
 
 #[derive(Clone)]
 pub struct SimpleDirectDeltaEncoding {
-    pub data_collection: HashMap<u8, IndexedData>,
+    pub data_collection: BTreeMap<u8, IndexedData>,
     pub crc: Vec<u8>,
 }
 
@@ -38,9 +38,10 @@ impl IndexedData {
 
 impl SimpleDirectDeltaEncoding {
     pub fn new(data: &[IndexedData]) -> SimpleDirectDeltaEncoding {
-        let bytes = Self::fold_indexed_data(data);
+        let data = Self::get_sorted(data);
+        let bytes = Self::fold_indexed_data(&data);
         let crc = DispnetHash::create(HashType::CRC, &bytes, None);
-        let mut data_map: HashMap<u8, IndexedData> = HashMap::new();
+        let mut data_map: BTreeMap<u8, IndexedData> = BTreeMap::new();
         for indexed_data in data {
             data_map.insert(indexed_data.index, indexed_data.clone());
         }
@@ -51,7 +52,8 @@ impl SimpleDirectDeltaEncoding {
     }
 
     pub fn load(data: &[IndexedData], crc: Vec<u8>) -> SimpleDirectDeltaEncoding {
-        let mut data_map: HashMap<u8, IndexedData> = HashMap::new();
+        let data = Self::get_sorted(data);
+        let mut data_map: BTreeMap<u8, IndexedData> = BTreeMap::new();
         for indexed_data in data {
             data_map.insert(indexed_data.index, indexed_data.clone());
         }
@@ -79,6 +81,7 @@ impl SimpleDirectDeltaEncoding {
     /// The Value is a variable length byte array that represents the value that should be inserted
     /// The Value is only present in the Replace and Insert actions
     pub fn patch(&mut self, new_data: &[IndexedData]) -> Vec<u8> {
+        let new_data = Self::get_sorted(new_data);
         // add the crc
         let mut diff_data: Vec<u8> = vec![self.crc.len() as u8];
         diff_data.extend(self.crc.clone());
@@ -102,7 +105,7 @@ impl SimpleDirectDeltaEncoding {
         diff_data
     }
 
-    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<Vec<u8>>, SDDEError> {
+    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<IndexedData>, SDDEError> {
         let crc_length = diff_data[0];
         let crc_value = &diff_data[1..(1 + crc_length as usize)];
         let bytes = Self::fold_indexed_data(self.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice());
@@ -122,9 +125,9 @@ impl SimpleDirectDeltaEncoding {
         self.crc = crc.digest_value.clone();
 
         // return the data in order
-        let mut data: Vec<Vec<u8>> = Vec::new();
+        let mut data: Vec<IndexedData> = Vec::new();
         for (_index, d) in self.data_collection.iter() {
-            data.push(d.data.clone());
+            data.push(d.clone());
         }
         Ok(data)
     }
@@ -132,6 +135,13 @@ impl SimpleDirectDeltaEncoding {
     pub fn fold_bytes(bytes: &[Vec<u8>]) -> Vec<u8> {
         bytes.iter().fold(Vec::new(), |mut acc, byte| {
             acc.extend(byte.clone());
+            acc
+        })
+    }
+
+    pub fn fold_indexes(bytes: &[IndexedData]) -> Vec<u8> {
+        bytes.iter().fold(Vec::new(), |mut acc, index| {
+            acc.extend(index.data.clone());
             acc
         })
     }
@@ -195,5 +205,11 @@ impl SimpleDirectDeltaEncoding {
             acc.extend(indexed_data.data.clone());
             acc
         })
+    }
+
+    fn get_sorted(data: &[IndexedData]) -> Vec<IndexedData> {
+        let mut data = data.to_vec();
+        data.sort_by(|a, b| a.index.cmp(&b.index));
+        data
     }
 }

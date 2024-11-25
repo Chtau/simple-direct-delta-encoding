@@ -21,7 +21,7 @@ mod patch_data {
             acc.extend(indexed_data.data.clone());
             acc
         });
-        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&data.unwrap()));
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&data.unwrap()));
     }
     
     #[test]
@@ -35,7 +35,7 @@ mod patch_data {
             acc.extend(indexed_data.data.clone());
             acc
         });
-        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&data.unwrap()));
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&data.unwrap()));
     }
 
     #[test]
@@ -72,7 +72,52 @@ mod patch_data {
             acc
         });
         assert_eq!(sdd_data.len(), sdd2_data.len());
-        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_bytes(&sdd2_data));
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&sdd2_data));
         true
+    }
+
+    #[test]
+    fn patch_all_properties() {
+        let props = vec![IndexedData::new(0, "Test".as_bytes().to_vec()), IndexedData::new(1, "Test2".as_bytes().to_vec())];
+
+        let mut sdd = SimpleDirectDeltaEncoding::new(&props);
+        let new_data = &[
+            IndexedData::new(0, "Test1".as_bytes().to_vec()),
+            IndexedData::new(1, "Test3".as_bytes().to_vec())
+        ];
+        let diff_data = sdd.patch(new_data);
+
+        let mut sdd2 = SimpleDirectDeltaEncoding::new(&props);
+        let result_data = sdd2.apply_patch(&diff_data);
+        println!("result: {:?}", result_data);
+        println!("collection: {:?}", sdd.data_collection);
+        assert!(result_data.is_ok());
+        let sdd_data = sdd.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
+            acc.extend(indexed_data.data.clone());
+            acc
+        });
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&result_data.unwrap()));
+    }
+
+    #[test]
+    fn patch_some_properties() {
+        let props = vec![IndexedData::new(0, "Test".as_bytes().to_vec()), IndexedData::new(1, "Test2".as_bytes().to_vec())];
+
+        let mut sdd = SimpleDirectDeltaEncoding::new(&props);
+        let new_data = &[
+            IndexedData::new(1, "Test3".as_bytes().to_vec())
+        ];
+        let diff_data = sdd.patch(new_data);
+
+        let mut sdd2 = SimpleDirectDeltaEncoding::new(&props);
+        let result_data = sdd2.apply_patch(&diff_data);
+        println!("result: {:?}", result_data);
+        println!("collection: {:?}", sdd.data_collection);
+        assert!(result_data.is_ok());
+        let sdd_data = sdd.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
+            acc.extend(indexed_data.data.clone());
+            acc
+        });
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&result_data.unwrap()));
     }
 }
