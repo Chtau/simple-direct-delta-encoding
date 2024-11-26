@@ -128,8 +128,38 @@ impl SimpleDirectDeltaEncoding {
         }
     }
 
+    /// Current state of the data
+    /// 
+    /// 
+    /// * Indexed data and index mappings are stored in bytes
+    /// * The data is always in the same order (indexed data first, index mappings last ...)
+    pub fn get_state(&self) -> Vec<u8> {
+        let mut bytes = Self::fold_indexed_data(&self.data_collection.values().cloned().collect::<Vec<IndexedData>>());
+        for (_, value) in self.last_index_mapping.iter() {
+            bytes.extend(value.current.clone());
+        }
+        bytes
+    }
+
+    /// Change the index mapping for the given index
     pub fn change_index_mapping(&mut self, index: u8, key: &[u8]) {
         self.index_mapping.insert(index, key.to_owned());
+    }
+
+    /// Stores all index mappings in the last index mapping collection.
+    /// 
+    /// 
+    /// This is useful when the changed index mappings should not be included in the next patch.<br/>
+    /// After creating or applying a patch this same logic will be applied.
+    pub fn apply_index_mappings(&mut self) {
+        for (index, key) in self.index_mapping.iter() {
+            if let Some(value) = self.last_index_mapping.get_mut(index) {
+                value.set(key.to_owned());
+            } else {
+                self.last_index_mapping.insert(*index, HistoryValue::new(key.to_owned()));
+            }
+        }
+        self.index_mapping.clear();
     }
 
     /// Patch the data with the new data and return the diff data
@@ -425,27 +455,6 @@ impl SimpleDirectDeltaEncoding {
             }
         }
         diffs
-    }
-
-    pub fn validate_patch_differences(diff_bytes: &[u8]) -> Result<(), SDDEError> {
-        let diff_bytes = Self::get_differences_bytes_with_crc(diff_bytes);
-        let mut i = 0;
-        while i < diff_bytes.len() {
-            // get index
-            if diff_bytes[i] == b'v' {
-                i += 2;
-            }
-
-            let diff_length = Difference::get_usize_type_from_bytes(&diff_bytes[i..]);
-            i += diff_length.1;
-            let bytes = &diff_bytes[i..(i + diff_length.0)];
-            let diff = Difference::validate_from_bytes(bytes);
-            if diff.is_err() {
-                return Err(diff.err().unwrap());
-            }
-            i += diff_length.0;
-        }
-        Ok(())
     }
 
     pub fn get_differences_bytes_with_crc(diff_bytes: &[u8]) -> &[u8] {

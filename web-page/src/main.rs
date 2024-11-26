@@ -85,7 +85,7 @@ fn GeneratePatch() -> Html {
     let previous_data_ref = use_node_ref();
     let input_ref = use_node_ref();
     let current_input = use_state(String::new);
-    let encoding_data_bytes: UseStateHandle<BTreeMap<u8, IndexedData>> = use_state(BTreeMap::new);
+    let encoding_data_bytes: UseStateHandle<Vec<u8>> = use_state(Vec::new);
     let current_diffs = use_state(BTreeMap::new);
     let current_patch = use_state(Vec::new);
     let current_byte_size = use_state(|| 0);
@@ -107,6 +107,13 @@ fn GeneratePatch() -> Html {
                 "Json porperty size changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "{ \"name\": \"Patrick\", \"age\": 9 }",
+                1
+            ),
+            (
+                "6",
+                "Json porperty key name changed",
+                "{ \"name\": \"John\", \"age\": 30 }",
+                "{ \"firstname\": \"John\", \"age\": 30 }",
                 1
             ),
         ]
@@ -233,77 +240,71 @@ fn GeneratePatch() -> Html {
         "".to_owned()
     };
 
-    /*let prev_data = if let Some(input) = previous_data_ref.get() {
-        if let Some(input) = input.dyn_ref::<web_sys::HtmlElement>() {
-            let input = input.inner_text();
-            if !input.is_empty() {
-                input.as_bytes().to_vec()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        }
-    } else {
-        Vec::new()
-    };*/
-
-    let enc_src: Vec<IndexedData> = if *selected_parser_type == 1 {
+    let mapped_src: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
         let a = serde_json::from_str::<serde_json::Value>(&prev_data_input);
         if a.is_ok() {
-            let mut properties_indexed: Vec<IndexedData> = Vec::new();
+            let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
             if let Ok(serde_json::Value::Object(map)) = a {
-                for (index, (_, value)) in map.iter().enumerate() {
-                    properties_indexed.push(IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec()));
+                for (index, (key, value)) in map.iter().enumerate() {
+                    properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
                 }
             }
             web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Previous: {:?}", &properties_indexed)));
             properties_indexed
         } else {
-            [IndexedData::new(0, vec![])].to_vec()
+            [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
         }
     } else {
-        [IndexedData::new(0, prev_data_input.as_bytes().to_vec())].to_vec()
+        [("".to_string(), IndexedData::new(0, prev_data_input.as_bytes().to_vec()))].to_vec()
     };
 
+    let enc_src = mapped_src.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
     let mut enc = SimpleDirectDeltaEncoding::new(&enc_src);
 
-    let enc_target: Vec<IndexedData> = if *selected_parser_type == 1 {
+    let keys = mapped_src.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
+    if !keys.is_empty() {
+        for (key, index) in keys {
+            enc.change_index_mapping(index, key.as_bytes());
+        }
+        enc.apply_index_mappings();
+    }
+
+    let mapped_target: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
         let a = serde_json::from_str::<serde_json::Value>(&current_input);
         if a.is_ok() {
-             let mut properties_indexed: Vec<IndexedData> = Vec::new();
+             let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
             if let Ok(serde_json::Value::Object(map)) = a {
-                for (index, (_, value)) in map.iter().enumerate() {
-                    properties_indexed.push(IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec()));
+                for (index, (key, value)) in map.iter().enumerate() {
+                    properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
                 }
             }
             web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Current: {:?}", &properties_indexed)));
             properties_indexed
         } else {
-            [IndexedData::new(0, vec![])].to_vec()
+            [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
         }
     } else {
-        [IndexedData::new(0, current_input.as_bytes().to_vec())].to_vec()
+        [("".to_string(), IndexedData::new(0, current_input.as_bytes().to_vec()))].to_vec()
     };
 
+    // apply the target key mappings and then patch the the target source data
+    let keys = mapped_target.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
+    if !keys.is_empty() {
+        for (key, index) in keys {
+            enc.change_index_mapping(index, key.as_bytes());
+        }
+    }
+
+    let enc_target = mapped_target.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
     let patch = enc.patch(&enc_target);
 
-    let enc_data = enc.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
-        acc.extend(indexed_data.data.clone());
-        acc
-    });
-    let encoding_data = (*encoding_data_bytes).values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
-        acc.extend(indexed_data.data.clone());
-        acc
-    });
+    let enc_data = enc.get_state();
 
-    if enc_data != encoding_data {
-        encoding_data_bytes.set(enc.data_collection);
-        let diffs = if SimpleDirectDeltaEncoding::validate_patch_differences(&patch).is_ok() {
-            SimpleDirectDeltaEncoding::get_differences(&patch)
-        } else {
-            BTreeMap::new()
-        };
+    if enc_data != *encoding_data_bytes {
+        encoding_data_bytes.set(enc_data);
+
+        let diffs = SimpleDirectDeltaEncoding::get_differences(&patch);
+        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Diffs: {:?}", &diffs)));
         current_diffs.set(diffs);
         current_patch.set(patch.clone());
         current_byte_size
@@ -357,9 +358,9 @@ fn GeneratePatch() -> Html {
                     {if *active_tab == "result" {
                         html! {
                         <div style="width: 100%;">
-                            <div>{format!("Total byte size: {}", current_patch.len())}</div>
+                            <div>{format!("Total byte size (CRC + differences): {}", current_patch.len())}</div>
                             <div>{format!("Byte size difference only: {}", *current_byte_size)}</div>
-                            <div>{format!("Plain byte size: {}", (*current_input).as_bytes().len())}</div>
+                            <div>{format!("Plain byte size (raw input as UTF-8): {}", (*current_input).as_bytes().len())}</div>
                             <hr/>
                             <div>{format!("{} difference Tokens:", current_diffs.len())}</div>
                             {
@@ -420,6 +421,13 @@ fn ApplyPatch() -> Html {
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "[10, 50, 54, 48, 48, 53, 49, 52, 53, 55, 55, 118, 0, 6, 114, 58, 0, 45, 1, 57, 5, 100, 58, 1, 45, 1, 118, 1, 10, 114, 58, 1, 45, 5, 80, 97, 116, 114, 105, 8, 105, 58, 6, 45, 3, 99, 107, 34]",
                 1,
+            ),
+            (
+                "6",
+                "Json porperty key name changed",
+                "{ \"name\": \"John\", \"age\": 30 }",
+                "[10, 50, 54, 48, 48, 53, 49, 52, 53, 55, 55, 118, 1, 109, 21, 9, 114, 58, 0, 45, 4, 102, 105, 114, 115, 10, 105, 58, 4, 45, 5, 116, 110, 97, 109, 101]",
+                1
             ),
         ]
     });
@@ -556,25 +564,35 @@ fn ApplyPatch() -> Html {
                 // apply patch
                 // source should be handled based on the parser type (json, plain)
                 web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Parser type: {:?}", &selected_parser_type)));
-                let enc_src: Vec<IndexedData> = if *selected_parser_type == 1 {
+                let mapped_src: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
                     let a = serde_json::from_str::<serde_json::Value>(&source_content);
                     if a.is_ok() {
-                        let mut properties_indexed: Vec<IndexedData> = Vec::new();
+                        let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
                         if let Ok(serde_json::Value::Object(map)) = a {
-                            for (index, (_, value)) in map.iter().enumerate() {
-                                properties_indexed.push(IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec()));
+                            for (index, (key, value)) in map.iter().enumerate() {
+                                properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
                             }
                         }
                         web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Previous: {:?}", &properties_indexed)));
                         properties_indexed
                     } else {
-                        [IndexedData::new(0, vec![])].to_vec()
+                        [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
                     }
                 } else {
-                    [IndexedData::new(0, source_content.as_bytes().to_vec())].to_vec()
+                    [("".to_string(), IndexedData::new(0, source_content.as_bytes().to_vec()))].to_vec()
                 };
 
+                let enc_src = mapped_src.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
                 let mut enc = SimpleDirectDeltaEncoding::new(&enc_src);
+
+                let keys = mapped_src.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
+                if !keys.is_empty() {
+                    for (key, index) in keys {
+                        enc.change_index_mapping(index, key.as_bytes());
+                    }
+                    enc.apply_index_mappings();
+                }
+
                 // handle apply patch for different parser types
                 let apply_result = enc.apply_patch(&patch);
                 if let Err(err) = apply_result {
@@ -603,8 +621,19 @@ fn ApplyPatch() -> Html {
                             let mut result = "{ ".to_string();
                             if let Ok(serde_json::Value::Object(map)) = a {
                                 for (index, (key, value)) in map.iter().enumerate() {
-                                    let b = patched[index].clone();
-                                    result.push_str(&format!("\"{}\": {}", key, String::from_utf8(SimpleDirectDeltaEncoding::fold_index_result(&[b])).expect("Failed to convert patched data to string")));
+                                    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Index: {:?} key: {:?} value: {:?} patched: {:?}", &index, key, value, patched)));
+                                    let b = patched.iter().find(|i|i.index == index as u8);
+                                    if let Some(b) = b {
+                                        let name = if let Some(n_changed) = &b.map_name_changed {
+                                            String::from_utf8(n_changed.to_owned()).expect("Failed to convert patched data to string")
+                                        } else {
+                                            key.to_string()
+                                        };
+                                        result.push_str(&format!("\"{}\": {}", name, String::from_utf8(SimpleDirectDeltaEncoding::fold_index_result(&[b.to_owned()])).expect("Failed to convert patched data to string")));
+                                    } else {
+                                        // no changes
+                                        result.push_str(&format!("\"{}\": {}", key, value));
+                                    }
                                     if index < map.len() - 1 {
                                         result.push_str(", ");
                                     }
