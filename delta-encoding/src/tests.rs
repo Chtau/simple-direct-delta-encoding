@@ -168,4 +168,31 @@ mod patch_data {
         });
         assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&result_data.unwrap()));
     }
+
+    #[test]
+    fn patch_index_mapping() {
+        let props = vec![
+            IndexedData::new(0, "Test".as_bytes().to_vec()),
+        ];
+
+        let mut sdd = SimpleDirectDeltaEncoding::new(&props);
+        sdd.change_index_mapping(0, "t1".as_bytes());
+        let new_data = &[
+            IndexedData::new(0, "Test2".as_bytes().to_vec()),
+        ];
+        let diff_data = sdd.patch(new_data);
+        println!("diff_data: {:?}", diff_data);
+
+        let mut sdd2 = SimpleDirectDeltaEncoding::new(&props);
+        let result_data = sdd2.apply_patch(&diff_data);
+        println!("result: {:?}", result_data);
+        println!("collection: {:?}", sdd.data_collection);
+        assert!(result_data.is_ok());
+        let sdd_data = sdd.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice().iter().fold(Vec::new(), |mut acc, indexed_data| {
+            acc.extend(indexed_data.data.clone());
+            acc
+        });
+        assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&result_data.unwrap()));
+        assert_eq!(sdd.get_index_mapping().get(&0).unwrap(), sdd2.get_index_mapping().get(&0).unwrap());
+    }
 }

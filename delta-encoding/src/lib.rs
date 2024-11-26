@@ -19,6 +19,8 @@ pub enum SDDEError {
 pub struct SimpleDirectDeltaEncoding {
     pub data_collection: BTreeMap<u8, IndexedData>,
     pub crc: Vec<u8>,
+    index_mapping: BTreeMap<u8, Vec<u8>>,
+    last_index_mapping: BTreeMap<u8, Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,10 +29,20 @@ pub struct IndexedData {
     pub data: Vec<u8>,
 }
 
+impl IndexedData {
+    pub fn new(index: u8, data: Vec<u8>) -> IndexedData {
+        IndexedData {
+            index,
+            data,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct EntryDifference {
     pub remove_entry: bool,
     pub diffs: Vec<Difference>,
+    pub map_name_changed: Option<Vec<Difference>>,
 }
 
 impl EntryDifference {
@@ -38,15 +50,32 @@ impl EntryDifference {
         EntryDifference {
             remove_entry: false,
             diffs,
+            map_name_changed: None,
+        }
+    }
+
+    pub fn remove_entry() -> EntryDifference {
+        EntryDifference {
+            remove_entry: true,
+            diffs: Vec::new(),
+            map_name_changed: None,
         }
     }
 }
 
-impl IndexedData {
-    pub fn new(index: u8, data: Vec<u8>) -> IndexedData {
-        IndexedData {
-            index,
-            data,
+#[derive(Debug, Clone)]
+pub struct IndexedDataResult {
+    pub index: u8,
+    pub data: Vec<u8>,
+    pub map_name_changed: Option<Vec<u8>>,
+}
+
+impl IndexedDataResult {
+    pub fn new(index_data: &IndexedData) -> IndexedDataResult {
+        IndexedDataResult {
+            index: index_data.index,
+            data: index_data.data.clone(),
+            map_name_changed: None,
         }
     }
 }
@@ -63,6 +92,8 @@ impl SimpleDirectDeltaEncoding {
         SimpleDirectDeltaEncoding {
             data_collection: data_map,
             crc: crc.digest_value.clone(),
+            index_mapping: BTreeMap::new(),
+            last_index_mapping: BTreeMap::new(),
         }
     }
 
@@ -74,8 +105,14 @@ impl SimpleDirectDeltaEncoding {
         }
         SimpleDirectDeltaEncoding {
             data_collection: data_map, 
-            crc 
+            crc,
+            index_mapping: BTreeMap::new(),
+            last_index_mapping: BTreeMap::new(),
         }
+    }
+
+    pub fn change_index_mapping(&mut self, index: u8, key: &[u8]) {
+        self.index_mapping.insert(index, key.to_owned());
     }
 
     /// Patch the data with the new data and return the diff data
@@ -144,22 +181,71 @@ impl SimpleDirectDeltaEncoding {
         let src_indexes: Vec<u8> = self.data_collection.keys().copied().collect();
         let removed_indexes: Vec<u8> = src_indexes.iter().filter(|x| !new_indexes.contains(x)).copied().collect();
 
-        for index in removed_indexes {
+        for index in &removed_indexes {
             // remove the index from the data collection
-            self.data_collection.remove(&index);
+            self.data_collection.remove(index);
 
             // add the remove index command to the patch           
             diff_data.extend(vec![
                 b'v',
-                index,
+                index.to_owned(),
                 b'r',
             ]);
         }
 
+        // apply changes in the index mapping to the last index mapping
+        for (index, new_data) in self.index_mapping.iter() {
+            // ignore mappings for removed indexes
+            if removed_indexes.contains(index) {
+                continue;
+            }
+            // create the diff data for the index
+            // set the index and the control byte
+            let new_diff = vec![
+                b'v',
+                *index,
+                b'm',
+            ];
+
+            // add the diff data for the index mapping to the patch
+            if let Some(old_value) = self.last_index_mapping.get(index) {
+                let last_diff = DataDifference::diff(old_value, new_data);
+
+                let mut diff_only = Vec::new();
+                for diff in last_diff.iter() {
+                    let bytes = diff.to_bytes();
+                    // add the difference
+                    diff_only.extend(Difference::get_usize_type_to_bytes(bytes.len()));
+                    diff_only.extend(bytes);
+                }
+                // only add the diff if there are any changes to the data (first 2 bytes are the index)
+                if !diff_only.is_empty() {
+                    diff_data.extend(new_diff);
+                    diff_data.extend(Difference::get_usize_type_to_bytes(diff_only.len()));
+                    diff_data.extend(diff_only);
+                }
+            } else {
+                // add the new data entry
+                let mut diff_only = Vec::new();
+                for diff in DataDifference::diff(&Vec::new(), new_data).iter() {
+                    let bytes = diff.to_bytes();
+                    // add the difference
+                    diff_only.extend(Difference::get_usize_type_to_bytes(bytes.len()));
+                    diff_only.extend(bytes);
+                }
+                diff_data.extend(new_diff);
+                diff_data.extend(Difference::get_usize_type_to_bytes(diff_only.len()));
+                diff_data.extend(diff_only);
+            }
+            // update the last index mapping
+            self.last_index_mapping.insert(*index, new_data.clone());
+        }
+        self.index_mapping.clear();
+
         diff_data
     }
 
-    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<IndexedData>, SDDEError> {
+    pub fn apply_patch(&mut self, diff_data: &[u8]) -> Result<Vec<IndexedDataResult>, SDDEError> {
         let crc_length = diff_data[0];
         let crc_value = &diff_data[1..(1 + crc_length as usize)];
         let bytes = Self::fold_indexed_data(self.data_collection.values().map(|x|x.to_owned()).collect::<Vec<IndexedData>>().as_slice());
@@ -168,9 +254,10 @@ impl SimpleDirectDeltaEncoding {
             return Err(SDDEError::CRC("CRC value does not match".to_owned()));
         }
 
+        let mut return_data: Vec<IndexedDataResult> = Vec::new();
         let diffs = Self::get_differences(diff_data);
-        println!("diffs: {:?}", diffs);
         for (index, diff) in diffs.iter() {
+            // the entry should be removed
             if diff.remove_entry {
                 self.data_collection.remove(index);
                 continue;
@@ -182,18 +269,26 @@ impl SimpleDirectDeltaEncoding {
                 // the index does not exist, add a new data entry
                 let new_data = Vec::new();
                 let data = DataDifference::apply_diff(&new_data, &diff.diffs);
-                self.data_collection.insert(*index, IndexedData::new(*index, data));
+                let data = IndexedData::new(*index, data);
+                self.data_collection.insert(*index, data);
             }
+
+
+            let mut index_data = IndexedDataResult::new(self.data_collection.get(index).unwrap());
+            // check if the map name has changes
+            if diff.map_name_changed.is_some() {
+                let last_index_map_bytes = self.last_index_mapping.get(index).cloned().unwrap_or_default();
+                let map_diffs_bytes = DataDifference::apply_diff(&last_index_map_bytes, diff.map_name_changed.as_ref().unwrap());
+                index_data.map_name_changed = Some(map_diffs_bytes.clone());
+                // update the last index mapping
+                self.last_index_mapping.insert(*index, map_diffs_bytes);
+            }
+            return_data.push(index_data);
         }
 
         self.crc = crc.digest_value.clone();
 
-        // return the data in order
-        let mut data: Vec<IndexedData> = Vec::new();
-        for (_index, d) in self.data_collection.iter() {
-            data.push(d.clone());
-        }
-        Ok(data)
+        Ok(return_data)
     }
 
     pub fn fold_bytes(bytes: &[Vec<u8>]) -> Vec<u8> {
@@ -203,7 +298,7 @@ impl SimpleDirectDeltaEncoding {
         })
     }
 
-    pub fn fold_indexes(bytes: &[IndexedData]) -> Vec<u8> {
+    pub fn fold_indexes(bytes: &[IndexedDataResult]) -> Vec<u8> {
         bytes.iter().fold(Vec::new(), |mut acc, index| {
             acc.extend(index.data.clone());
             acc
@@ -211,8 +306,15 @@ impl SimpleDirectDeltaEncoding {
     }
 
     pub fn get_differences(diff_bytes: &[u8]) -> BTreeMap<u8, EntryDifference> {
-        let diff_bytes = Self::get_differences_bytes_with_crc(diff_bytes);
-        println!("diff bytes: {:?}", diff_bytes);
+        Self::on_get_differences(diff_bytes, true)
+    }
+
+    pub fn get_index_mapping(&self) -> BTreeMap<u8, Vec<u8>> {
+        self.last_index_mapping.clone()
+    }
+
+    fn on_get_differences(diff_bytes: &[u8], has_crc: bool) -> BTreeMap<u8, EntryDifference> {
+        let diff_bytes = if has_crc { Self::get_differences_bytes_with_crc(diff_bytes) } else { diff_bytes };
         let mut diffs: BTreeMap<u8, EntryDifference> = BTreeMap::new();
         let mut i = 0;
         let mut index = 0;
@@ -222,10 +324,36 @@ impl SimpleDirectDeltaEncoding {
                 index = diff_bytes[i + 1];
                 i += 2;    
             }
-            println!("bytes: {:?}", &diff_bytes[i..]);
+            // handle remove entry
             if diff_bytes[i] == b'r' {
                 i += 1;
-                diffs.insert(index, EntryDifference { remove_entry: true, diffs: Vec::new() });
+                diffs.insert(index, EntryDifference::remove_entry());
+                continue;
+            }
+            // handle map name changes
+            if diff_bytes[i] == b'm' {
+                i += 1;
+                let map_diffs_length = Difference::get_usize_type_from_bytes(&diff_bytes[i..]);
+                i += map_diffs_length.1;
+                let bytes = &diff_bytes[i..(i + map_diffs_length.0)];
+                i += bytes.len();
+
+                // get the diffs for the map name
+                let map_diffs_result = Self::on_get_differences(bytes, false);
+                let map_entry_diff = map_diffs_result.get(&0);
+                if map_entry_diff.is_none() {
+                    continue;
+                }
+                let map_entry_diff = map_entry_diff.unwrap().to_owned().diffs.clone();
+
+                // insert the map name changed diff
+                if let Some(d) = diffs.get_mut(&index) {
+                    d.map_name_changed = Some(map_entry_diff);
+                } else {
+                    diffs.insert(index, EntryDifference::new(Vec::new()));
+                    diffs.get_mut(&index).unwrap().map_name_changed = Some(map_entry_diff);
+                }
+
                 continue;
             }
             

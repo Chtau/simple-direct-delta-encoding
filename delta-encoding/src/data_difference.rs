@@ -80,6 +80,7 @@ impl From<USizeType> for u8 {
     }
 }
 
+#[derive(Clone)]
 pub struct Difference {
     pub action: DifferenceAction,
     pub range: Range,
