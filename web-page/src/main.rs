@@ -604,7 +604,7 @@ fn ApplyPatch() -> Html {
                             if let Ok(serde_json::Value::Object(map)) = a {
                                 for (index, (key, value)) in map.iter().enumerate() {
                                     let b = patched[index].clone();
-                                    result.push_str(&format!("\"{}\": {}", key, String::from_utf8(SimpleDirectDeltaEncoding::fold_indexes(&[b])).expect("Failed to convert patched data to string")));
+                                    result.push_str(&format!("\"{}\": {}", key, String::from_utf8(SimpleDirectDeltaEncoding::fold_index_result(&[b])).expect("Failed to convert patched data to string")));
                                     if index < map.len() - 1 {
                                         result.push_str(", ");
                                     }
@@ -616,7 +616,7 @@ fn ApplyPatch() -> Html {
                         }
                     } else {
                         input.set_inner_text(
-                            &String::from_utf8(SimpleDirectDeltaEncoding::fold_indexes(&patched))
+                            &String::from_utf8(SimpleDirectDeltaEncoding::fold_index_result(&patched))
                                 .expect("Failed to convert patched data to string"),
                         );
                     }
