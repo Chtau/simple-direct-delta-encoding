@@ -20,7 +20,27 @@ pub struct SimpleDirectDeltaEncoding {
     pub data_collection: BTreeMap<u8, IndexedData>,
     pub crc: Vec<u8>,
     index_mapping: BTreeMap<u8, Vec<u8>>,
-    last_index_mapping: BTreeMap<u8, Vec<u8>>,
+    last_index_mapping: BTreeMap<u8, HistoryValue>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HistoryValue {
+    pub current: Vec<u8>,
+    pub last: Vec<u8>,
+}
+
+impl HistoryValue {
+    pub fn new(current: Vec<u8>) -> HistoryValue {
+        HistoryValue {
+            current,
+            last: Vec::new(),
+        }
+    }
+
+    pub fn set(&mut self, current: Vec<u8>) {
+        self.last = self.current.clone();
+        self.current = current;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -207,9 +227,10 @@ impl SimpleDirectDeltaEncoding {
                 b'm',
             ];
 
+            let mut is_new_mapping = false;
             // add the diff data for the index mapping to the patch
             if let Some(old_value) = self.last_index_mapping.get(index) {
-                let last_diff = DataDifference::diff(old_value, new_data);
+                let last_diff = DataDifference::diff(&old_value.current, new_data);
 
                 let mut diff_only = Vec::new();
                 for diff in last_diff.iter() {
@@ -225,6 +246,7 @@ impl SimpleDirectDeltaEncoding {
                     diff_data.extend(diff_only);
                 }
             } else {
+                is_new_mapping = true;
                 // add the new data entry
                 let mut diff_only = Vec::new();
                 for diff in DataDifference::diff(&Vec::new(), new_data).iter() {
@@ -238,7 +260,11 @@ impl SimpleDirectDeltaEncoding {
                 diff_data.extend(diff_only);
             }
             // update the last index mapping
-            self.last_index_mapping.insert(*index, new_data.clone());
+            if is_new_mapping {
+                self.last_index_mapping.insert(*index, HistoryValue::new(new_data.clone()));
+            } else {
+                self.last_index_mapping.get_mut(index).unwrap().set(new_data.clone());
+            }
         }
         self.index_mapping.clear();
 
@@ -277,11 +303,15 @@ impl SimpleDirectDeltaEncoding {
             let mut index_data = IndexedDataResult::new(self.data_collection.get(index).unwrap());
             // check if the map name has changes
             if diff.map_name_changed.is_some() {
-                let last_index_map_bytes = self.last_index_mapping.get(index).cloned().unwrap_or_default();
+                let last_index_map_bytes = self.last_index_mapping.get(index).cloned().unwrap_or_default().current;
                 let map_diffs_bytes = DataDifference::apply_diff(&last_index_map_bytes, diff.map_name_changed.as_ref().unwrap());
                 index_data.map_name_changed = Some(map_diffs_bytes.clone());
                 // update the last index mapping
-                self.last_index_mapping.insert(*index, map_diffs_bytes);
+                if !self.last_index_mapping.contains_key(index) {
+                    self.last_index_mapping.insert(*index, HistoryValue::new(map_diffs_bytes));
+                } else {
+                    self.last_index_mapping.get_mut(index).unwrap().set(map_diffs_bytes);
+                }
             }
             return_data.push(index_data);
         }
@@ -309,7 +339,7 @@ impl SimpleDirectDeltaEncoding {
         Self::on_get_differences(diff_bytes, true)
     }
 
-    pub fn get_index_mapping(&self) -> BTreeMap<u8, Vec<u8>> {
+    pub fn get_index_mapping(&self) -> BTreeMap<u8, HistoryValue> {
         self.last_index_mapping.clone()
     }
 

@@ -193,6 +193,6 @@ mod patch_data {
             acc
         });
         assert_eq!(sdd_data, SimpleDirectDeltaEncoding::fold_indexes(&result_data.unwrap()));
-        assert_eq!(sdd.get_index_mapping().get(&0).unwrap(), sdd2.get_index_mapping().get(&0).unwrap());
+        assert_eq!(sdd.get_index_mapping().get(&0).unwrap().current, sdd2.get_index_mapping().get(&0).unwrap().current);
     }
 }
