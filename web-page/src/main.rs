@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use delta_encoding::{IndexedData, SimpleDirectDeltaEncoding};
 use wasm_bindgen::JsCast;
@@ -28,9 +28,31 @@ fn switch(routes: Route) -> Html {
 
 #[function_component]
 fn App() -> Html {
+    let on_close = Callback::from(move |_| {
+        // Execute JavaScript here
+         
+        let window = web_sys::window().expect("no global `window` exists");
+        let document = window.document().expect("should have a document on window");
+        let error_display = document.get_element_by_id("error-display").expect("should have #error-display on the page");
+        let style = error_display.get_attribute("style").expect("could not get style");
+        if style.contains("display: flex;") {
+            let style = style.replace("display: flex;", "display: none;");
+            error_display.set_attribute("style", &style).expect("could not set style");
+        }
+    });
+
     html! {
     <BrowserRouter>
         <div>
+            <div id="error-display" style="z-index: 1000; position: fixed; bottom: 0; left: 0; width: 100%; height: 100px; background-color: rgba(0, 0, 0, 0.5); display: none; justify-content: center; align-items: center; overflow: auto;">
+                <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; text-align: center;">{ "Open the developer console for more details" }</div>
+                <button onclick={on_close} style="position: absolute; top: 10px; right: 10px;">{ "Close" }</button>
+                <div style="background-color: white; padding: 20px; border-radius: 5px; position: relative;">
+                    <div id="error-display-text" style="color: red;">
+                        
+                    </div>
+                </div>
+            </div>
             <Topbar />
             <div class="content">
                 <Switch<Route> render={switch} />
