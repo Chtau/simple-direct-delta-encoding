@@ -86,7 +86,7 @@ fn Topbar() -> Html {
     let path = location.path();
 
     html! {
-        <div class="top-bar">
+        <div class="top-bar" style="display: flex;">
             <div style="margin-right: 10px; margin-left: 10px;">
                 {"Simple direct delta encoding"}
             </div>
@@ -94,7 +94,32 @@ fn Topbar() -> Html {
                 <button disabled={path == "/"} onclick={on_nav_generate_patch}>{ "Generate Patch" }</button>
                 <button disabled={path == "/apply-patch"} onclick={on_nav_apply_patch}>{ "Apply Patch" }</button>
             </div>
+            <div style="margin-left: auto;">
+                <a href="https://github.com/Chtau/simple-direct-delta-encoding" target="_blank">
+                    <img src="github.svg" rel="icon" alt="GitHub" style="width: 40px; height: 40px; vertical-align: middle; margin-right: 7px;" />
+                </a>
+            </div>
         </div>
+    }
+}
+
+struct SampleData<'a> {
+    id: &'a str,
+    name: &'a str,
+    source: &'a str,
+    target: &'a str,
+    parser_type: usize,
+}
+
+impl<'a> SampleData<'a> {
+    fn new(id: &'a str, name: &'a str, source: &'a str, target: &'a str, parser_type: usize) -> SampleData<'a> {
+        SampleData {
+            id,
+            name,
+            source,
+            target,
+            parser_type,
+        }
     }
 }
 
@@ -109,27 +134,27 @@ fn GeneratePatch() -> Html {
     let current_diffs = use_state(BTreeMap::new);
     let current_patch = use_state(Vec::new);
     let current_byte_size = use_state(|| 0);
-    let samples: UseStateHandle<Vec<(&str, &str, &str, &str, usize)>> = use_state(|| {
+    let samples: UseStateHandle<Vec<SampleData>> = use_state(|| {
         vec![
-            ("0", "Select Sample", "", "", 0),
-            ("1", "Test insert", "test", "test1", 0),
-            ("2", "Test replace", "test123", "test321", 0),
-            ("3", "Test remove", "test1test", "test", 0),
-            (
+            SampleData::new("0", "Select Sample", "", "", 0),
+            SampleData::new("1", "Test insert", "test", "test1", 0),
+            SampleData::new("2", "Test replace", "test123", "test321", 0),
+            SampleData::new("3", "Test remove", "test1test", "test", 0),
+            SampleData::new(
                 "4",
                 "Json same size change",
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "{ \"name\": \"Will\", \"age\": 21 }",
                 1
             ),
-            (
+            SampleData::new(
                 "5",
                 "Json porperty size changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "{ \"name\": \"Patrick\", \"age\": 9 }",
                 1
             ),
-            (
+            SampleData::new(
                 "6",
                 "Json porperty key name changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
@@ -194,7 +219,7 @@ fn GeneratePatch() -> Html {
             }
             let sample = samples
                 .iter()
-                .find(|x| x.0 == selected_value)
+                .find(|x| x.id == selected_value)
                 .expect("Sample not found");
 
             if let Some(input) = previous_data_ref
@@ -202,7 +227,7 @@ fn GeneratePatch() -> Html {
                 .expect("Input element should exist")
                 .dyn_ref::<web_sys::HtmlElement>()
             {
-                input.set_inner_text(sample.2);
+                input.set_inner_text(sample.source);
             }
 
             if let Some(input) = input_ref
@@ -210,9 +235,9 @@ fn GeneratePatch() -> Html {
                 .expect("Input element should exist")
                 .dyn_ref::<web_sys::HtmlElement>()
             {
-                input.set_inner_text(sample.3);
+                input.set_inner_text(sample.target);
             }
-            selected_parser_type.set(sample.4);
+            selected_parser_type.set(sample.parser_type);
             current_input.set("".to_owned());
             current_diffs.set(BTreeMap::new());
             current_patch.set(Vec::new());
@@ -329,7 +354,7 @@ fn GeneratePatch() -> Html {
                     <div style="display: flex;height: 20px;width: 100%;">
                         <select onchange={on_sample_select_change}>
                             { for samples.iter().enumerate().map(|(index, sample)| html! {
-                                <option value={sample.0} selected={index == 0}>{ &sample.1 }</option>
+                                <option value={sample.id} selected={index == 0}>{ &sample.name }</option>
                             }) }
                         </select>
                         <select style="margin-left: auto;" onchange={on_parser_select_change}>
@@ -401,39 +426,39 @@ fn GeneratePatch() -> Html {
 
 #[function_component]
 fn ApplyPatch() -> Html {
-    let samples: UseStateHandle<Vec<(&str, &str, &str, &str, usize)>> = use_state(|| {
+    let samples: UseStateHandle<Vec<SampleData>> = use_state(|| {
         vec![
-            ("0", "Select Sample", "", "", 0),
-            (
+            SampleData::new("0", "Select Sample", "", "", 0),
+            SampleData::new(
                 "1",
                 "Test insert",
                 "test",
                 "[10, 50, 50, 53, 56, 54, 54, 50, 48, 56, 48, 118, 0, 6, 105, 58, 4, 45, 1, 49]",
                 0,
             ),
-            (
+            SampleData::new(
                 "2",
                 "Test replace",
                 "test123",
                 "[10, 49, 55, 49, 56, 53, 50, 48, 49, 54, 49, 118, 0, 8, 114, 58, 4, 45, 3, 51, 50, 49]",
                 0,
             ),
-            ("3", "Test remove", "test1test", "[10, 50, 56, 56, 57, 48, 48, 52, 52, 53, 50, 118, 0, 5, 100, 58, 4, 45, 5]", 0),
-            (
+            SampleData::new("3", "Test remove", "test1test", "[10, 50, 56, 56, 57, 48, 48, 52, 52, 53, 50, 118, 0, 5, 100, 58, 4, 45, 5]", 0),
+            SampleData::new(
                 "4",
                 "Json same size change",
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "[10, 50, 54, 48, 48, 53, 49, 52, 53, 55, 55, 118, 0, 7, 114, 58, 0, 45, 2, 50, 49, 118, 1, 9, 114, 58, 1, 45, 4, 87, 105, 108, 108]",
                 1,
             ),
-            (
+            SampleData::new(
                 "5",
                 "Json porperty size changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
                 "[10, 50, 54, 48, 48, 53, 49, 52, 53, 55, 55, 118, 0, 6, 114, 58, 0, 45, 1, 57, 5, 100, 58, 1, 45, 1, 118, 1, 10, 114, 58, 1, 45, 5, 80, 97, 116, 114, 105, 8, 105, 58, 6, 45, 3, 99, 107, 34]",
                 1,
             ),
-            (
+            SampleData::new(
                 "6",
                 "Json porperty key name changed",
                 "{ \"name\": \"John\", \"age\": 30 }",
@@ -468,7 +493,7 @@ fn ApplyPatch() -> Html {
             }
             let sample = samples
                 .iter()
-                .find(|x| x.0 == selected_value)
+                .find(|x| x.id == selected_value)
                 .expect("Sample not found");
 
             if let Some(input) = source_input_ref
@@ -476,7 +501,7 @@ fn ApplyPatch() -> Html {
                 .expect("Input element should exist")
                 .dyn_ref::<web_sys::HtmlElement>()
             {
-                input.set_inner_text(sample.2);
+                input.set_inner_text(sample.source);
             }
 
             if let Some(input) = input_ref
@@ -484,9 +509,9 @@ fn ApplyPatch() -> Html {
                 .expect("Input element should exist")
                 .dyn_ref::<web_sys::HtmlElement>()
             {
-                input.set_inner_text(sample.3);
+                input.set_inner_text(sample.target);
             }
-            selected_parser_type.set(sample.4);
+            selected_parser_type.set(sample.parser_type);
 
             if let Some(input) = result_input_ref
                 .get()
@@ -686,7 +711,7 @@ fn ApplyPatch() -> Html {
                     <div style="display: flex;height: 20px;width: 100%;">
                         <select onchange={on_sample_select_change}>
                             { for samples.iter().enumerate().map(|(index, sample)| html! {
-                                <option value={sample.0} selected={index == 0}>{ &sample.1 }</option>
+                                <option value={sample.id} selected={index == 0}>{ &sample.name }</option>
                             }) }
                         </select>
                         <select style="margin-left: auto;" onchange={on_parser_select_change}>
