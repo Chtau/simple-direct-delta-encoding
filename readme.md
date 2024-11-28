@@ -13,6 +13,8 @@ The library takes data as collection of `IndexedData` which contains an index an
 * Patches can remove named keys and indexed data
 * Patches can add named keys and indexed data
 
+[Live demo](https://chtau.github.io/simple-direct-delta-encoding/)
+
 ## Usage
 
 ### Create and apply patch
@@ -141,15 +143,18 @@ cargo bench -p delta-encoding
 
 ## Build instructions for web page
 
-To build, use the following command:
-
-```bash
-cargo build -p web-page
-```
-
 To run the web-page, use the following command:
 
 ```bash
 cd web-page
 trunk serve --open
+```
+
+## Build instructions for GH page
+
+To run the web-page, use the following command:
+
+```bash
+cd web-page
+trunk build --release --public-url simple-direct-delta-encoding/
 ```
