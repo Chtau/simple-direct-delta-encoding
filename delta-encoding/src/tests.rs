@@ -210,4 +210,79 @@ mod patch_data {
     fn fold_data_collection(data_collection: &BTreeMap<u8, IndexedData>) -> Vec<u8> {
         SimpleDirectDeltaEncoding::fold_index(&data_collection.values().cloned().collect::<Vec<_>>())
     }
+
+    #[test]
+    fn json_object_patch() {
+        let json_source = r#"{"name": "John", "age": 30, "city": ""}"#;
+        let json_changes = r#"{"firstname": "John", "age": 30, "city": "New York"}"#;
+
+        let json_source = serde_json::from_str::<serde_json::Value>(json_source).unwrap();
+        let json_changes = serde_json::from_str::<serde_json::Value>(json_changes).unwrap();
+
+        let mut src_data = vec![];
+        let mut changes_data = vec![];
+
+        for (index, (key, value)) in json_source.as_object().unwrap().iter().enumerate() {
+            src_data.push((key, IndexedData::new(
+                index as u8,
+                value.to_string().as_bytes().to_vec(),
+            )));
+        }
+
+        for (index, (key, value)) in json_changes.as_object().unwrap().iter().enumerate() {
+            changes_data.push((key, IndexedData::new(
+                index as u8,
+                value.to_string().as_bytes().to_vec(),
+            )));
+        }
+
+        // setup the source data with already applied index mappings
+        let mut sdd = SimpleDirectDeltaEncoding::new(&src_data.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>());
+        for (key, value) in src_data.iter() {
+            sdd.change_index_mapping(value.index, key.as_bytes());
+        }
+        sdd.apply_index_mappings();
+
+        // set the changes data beginning with the index mappings and then create a patch
+        for (key, value) in changes_data.iter() {
+            sdd.change_index_mapping(value.index, key.as_bytes());
+        }
+        let patch_data = sdd.patch(&changes_data.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>());
+
+        // apply the patch to a new instance of the SDD which only has the source data
+        let mut sdd2 = SimpleDirectDeltaEncoding::new(&src_data.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>());
+        for (key, value) in src_data.iter() {
+            sdd2.change_index_mapping(value.index, key.as_bytes());
+        }
+        sdd2.apply_index_mappings();
+        // apply patch
+        let result_data = sdd2.apply_patch(&patch_data);
+
+        // check if the result is ok
+        assert!(result_data.is_ok());
+        // check if the data is the same
+        assert_eq!(
+            fold_data_collection(&sdd.data_collection),
+            fold_data_collection(&sdd2.data_collection),
+        );
+
+        // create a new json object from the data in sdd2
+        let mut json_obj = serde_json::Map::new();
+        let index_mapping = sdd2.get_index_mapping();
+        for (key, value) in sdd2.data_collection.iter() {
+            let key = std::str::from_utf8(&index_mapping.get(key).unwrap().current).unwrap();
+            if let Ok(num) = std::str::from_utf8(&value.data).unwrap().parse::<i64>() {
+                json_obj.insert(key.to_string(), serde_json::Value::Number(serde_json::Number::from(num)));
+            } else {
+                let a = std::str::from_utf8(&value.data).unwrap().to_string();
+                json_obj.insert(key.to_string(), serde_json::Value::String(a.trim_matches('"').to_string()));
+            }
+        }
+
+        // expected json object should be the same as the changes data
+        // json_obj: {"age": Number(30), "city": String("New York"), "firstname": String("John")}
+        println!("json_obj: {:?}", json_obj);
+        assert_eq!(&json_obj, json_changes.as_object().unwrap());
+
+    }
 }

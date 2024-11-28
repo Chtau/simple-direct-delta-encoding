@@ -1,0 +1,1 @@
+window.onerror=((a,b,c,d,e)=>{let f=document.getElementById(`error-display`);if(f){f.style.display=`flex`;let e=document.getElementById(`error-display-text`);e.innerText=`Error: ${a} at ${b}:${c}:${d}`}})

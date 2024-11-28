@@ -125,7 +125,7 @@ mod test {
         let difference = Difference::from_bytes(&bytes);
         assert_eq!(difference.action, DifferenceAction::Delete);
         assert_eq!(difference.range, Range::new(4, 1));
-        assert_eq!(difference.value, vec![]);
+        assert!(difference.value.is_empty());
     }
 
     #[test]
