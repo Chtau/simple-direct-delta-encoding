@@ -29,8 +29,6 @@ fn switch(routes: Route) -> Html {
 #[function_component]
 fn App() -> Html {
     let on_close = Callback::from(move |_| {
-        // Execute JavaScript here
-         
         let window = web_sys::window().expect("no global `window` exists");
         let document = window.document().expect("should have a document on window");
         let error_display = document.get_element_by_id("error-display").expect("should have #error-display on the page");
@@ -184,6 +182,10 @@ fn GeneratePatch() -> Html {
         let previous_data_ref = previous_data_ref.clone();
         let input_ref = input_ref.clone();
         let selected_parser_type = selected_parser_type.clone();
+        let current_input = current_input.clone();
+        let current_diffs = current_diffs.clone();
+        let current_patch = current_patch.clone();
+        let current_byte_size = current_byte_size.clone();
         Callback::from(move |e: Event| {
             let target = e.target_dyn_into::<web_sys::HtmlSelectElement>().unwrap();
             let selected_value = target.value();
@@ -211,39 +213,27 @@ fn GeneratePatch() -> Html {
                 input.set_inner_text(sample.3);
             }
             selected_parser_type.set(sample.4);
+            current_input.set("".to_owned());
+            current_diffs.set(BTreeMap::new());
+            current_patch.set(Vec::new());
+            current_byte_size.set(0);
         })
     };
 
     let on_parser_select_change = {
-        let samples = samples.clone();
-        let previous_data_ref = previous_data_ref.clone();
-        let input_ref = input_ref.clone();
+        let selected_parser_type = selected_parser_type.clone();
+        let current_input = current_input.clone();
+        let current_diffs = current_diffs.clone();
+        let current_patch = current_patch.clone();
+        let current_byte_size = current_byte_size.clone();
         Callback::from(move |e: Event| {
             let target = e.target_dyn_into::<web_sys::HtmlSelectElement>().unwrap();
             let selected_value = target.value();
-            if selected_value == "0" {
-                return;
-            }
-            let sample = samples
-                .iter()
-                .find(|x| x.0 == selected_value)
-                .expect("Sample not found");
-
-            if let Some(input) = previous_data_ref
-                .get()
-                .expect("Input element should exist")
-                .dyn_ref::<web_sys::HtmlElement>()
-            {
-                input.set_inner_text(sample.2);
-            }
-
-            if let Some(input) = input_ref
-                .get()
-                .expect("Input element should exist")
-                .dyn_ref::<web_sys::HtmlElement>()
-            {
-                input.set_inner_text(sample.3);
-            }
+            selected_parser_type.set(selected_value.parse::<usize>().unwrap());
+            current_input.set("".to_owned());
+            current_diffs.set(BTreeMap::new());
+            current_patch.set(Vec::new());
+            current_byte_size.set(0);
         })
     };
 
@@ -262,88 +252,87 @@ fn GeneratePatch() -> Html {
         "".to_owned()
     };
 
-    let mapped_src: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
-        let a = serde_json::from_str::<serde_json::Value>(&prev_data_input);
-        if a.is_ok() {
-            let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
-            if let Ok(serde_json::Value::Object(map)) = a {
-                for (index, (key, value)) in map.iter().enumerate() {
-                    properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
+    if !current_input.is_empty() {
+        let mapped_src: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
+            let a = serde_json::from_str::<serde_json::Value>(&prev_data_input);
+            if a.is_ok() {
+                let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
+                if let Ok(serde_json::Value::Object(map)) = a {
+                    for (index, (key, value)) in map.iter().enumerate() {
+                        properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
+                    }
                 }
+                properties_indexed
+            } else {
+                [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
             }
-            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Previous: {:?}", &properties_indexed)));
-            properties_indexed
         } else {
-            [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
+            [("".to_string(), IndexedData::new(0, prev_data_input.as_bytes().to_vec()))].to_vec()
+        };
+
+        let enc_src = mapped_src.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
+        let mut enc = SimpleDirectDeltaEncoding::new(&enc_src);
+
+        let keys = mapped_src.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
+        if !keys.is_empty() {
+            for (key, index) in keys {
+                enc.change_index_mapping(index, key.as_bytes());
+            }
+            enc.apply_index_mappings();
         }
-    } else {
-        [("".to_string(), IndexedData::new(0, prev_data_input.as_bytes().to_vec()))].to_vec()
-    };
 
-    let enc_src = mapped_src.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
-    let mut enc = SimpleDirectDeltaEncoding::new(&enc_src);
-
-    let keys = mapped_src.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
-    if !keys.is_empty() {
-        for (key, index) in keys {
-            enc.change_index_mapping(index, key.as_bytes());
-        }
-        enc.apply_index_mappings();
-    }
-
-    let mapped_target: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
-        let a = serde_json::from_str::<serde_json::Value>(&current_input);
-        if a.is_ok() {
-             let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
-            if let Ok(serde_json::Value::Object(map)) = a {
-                for (index, (key, value)) in map.iter().enumerate() {
-                    properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
+        let mapped_target: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
+            let a = serde_json::from_str::<serde_json::Value>(&current_input);
+            if a.is_ok() {
+                let mut properties_indexed: Vec<(String, IndexedData)> = Vec::new();
+                if let Ok(serde_json::Value::Object(map)) = a {
+                    for (index, (key, value)) in map.iter().enumerate() {
+                        properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
+                    }
                 }
+                properties_indexed
+            } else {
+                [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
             }
-            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Current: {:?}", &properties_indexed)));
-            properties_indexed
         } else {
-            [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
+            [("".to_string(), IndexedData::new(0, current_input.as_bytes().to_vec()))].to_vec()
+        };
+
+        // apply the target key mappings and then patch the the target source data
+        let keys = mapped_target.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
+        if !keys.is_empty() {
+            for (key, index) in keys {
+                enc.change_index_mapping(index, key.as_bytes());
+            }
         }
-    } else {
-        [("".to_string(), IndexedData::new(0, current_input.as_bytes().to_vec()))].to_vec()
-    };
 
-    // apply the target key mappings and then patch the the target source data
-    let keys = mapped_target.iter().map(|(key, i)| (key.clone(), i.index)).collect::<Vec<(String, u8)>>();
-    if !keys.is_empty() {
-        for (key, index) in keys {
-            enc.change_index_mapping(index, key.as_bytes());
+        let enc_target = mapped_target.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
+        let patch = enc.patch(&enc_target);
+
+        let enc_data = enc.get_state();
+
+        if enc_data != *encoding_data_bytes {
+            encoding_data_bytes.set(enc_data);
+
+            let diffs = SimpleDirectDeltaEncoding::get_differences(&patch);
+            current_diffs.set(diffs);
+            current_patch.set(patch.clone());
+            current_byte_size
+                .set(SimpleDirectDeltaEncoding::get_differences_bytes_with_crc(&patch).len());
         }
-    }
-
-    let enc_target = mapped_target.iter().map(|(_, indexed_data)| indexed_data.clone()).collect::<Vec<IndexedData>>();
-    let patch = enc.patch(&enc_target);
-
-    let enc_data = enc.get_state();
-
-    if enc_data != *encoding_data_bytes {
-        encoding_data_bytes.set(enc_data);
-
-        let diffs = SimpleDirectDeltaEncoding::get_differences(&patch);
-        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Diffs: {:?}", &diffs)));
-        current_diffs.set(diffs);
-        current_patch.set(patch.clone());
-        current_byte_size
-            .set(SimpleDirectDeltaEncoding::get_differences_bytes_with_crc(&patch).len());
     }
 
     html! {
          <>
             <div class="section section-3">
                 <div class="padded full" style="flex-direction: column;">
-                    <div style="height: 40px;">
+                    <div style="display: flex;height: 20px;width: 100%;">
                         <select onchange={on_sample_select_change}>
                             { for samples.iter().enumerate().map(|(index, sample)| html! {
                                 <option value={sample.0} selected={index == 0}>{ &sample.1 }</option>
                             }) }
                         </select>
-                        <select onchange={on_parser_select_change}>
+                        <select style="margin-left: auto;" onchange={on_parser_select_change}>
                             { for parser_types.iter().enumerate().map(|(index, parser)| html! {
                                 <option value={parser.0} selected={index == *selected_parser_type}>{ &parser.1 }</option>
                             }) }
@@ -356,8 +345,8 @@ fn GeneratePatch() -> Html {
             </div>
             <div class="section section-3">
                 <div class="padded full" style="flex-direction: column;">
-                    <div style="height: 40px; align-self: end;">
-                        <button onclick={on_generate_click} style="">{"Generate Patch"}</button>
+                    <div style="display: flex;height: 20px;width: 100%; align-self: end;">
+                        <button style="margin-left: auto;" onclick={on_generate_click}>{"Generate Patch"}</button>
                     </div>
                     <div>{"New data:"}</div>
                     <div ref={input_ref} class="input-content full" contenteditable={"true"}>
@@ -470,6 +459,7 @@ fn ApplyPatch() -> Html {
         let source_input_ref = source_input_ref.clone();
         let input_ref = input_ref.clone();
         let selected_parser_type = selected_parser_type.clone();
+        let result_input_ref = result_input_ref.clone();
         Callback::from(move |e: Event| {
             let target = e.target_dyn_into::<web_sys::HtmlSelectElement>().unwrap();
             let selected_value = target.value();
@@ -497,17 +487,33 @@ fn ApplyPatch() -> Html {
                 input.set_inner_text(sample.3);
             }
             selected_parser_type.set(sample.4);
+
+            if let Some(input) = result_input_ref
+                .get()
+                .expect("Input element should exist")
+                .dyn_ref::<web_sys::HtmlElement>()
+            {
+                input.set_inner_text("");
+            }
         })
     };
 
     let on_parser_select_change = {
         let selected_parser_type = selected_parser_type.clone();
+        let result_input_ref = result_input_ref.clone();
         Callback::from(move |e: Event| {
             let target = e.target_dyn_into::<web_sys::HtmlSelectElement>().unwrap();
             let selected_value = target.value();
             // parse as usize
             let selected_value = selected_value.parse::<usize>().unwrap();
             selected_parser_type.set(selected_value);
+            if let Some(input) = result_input_ref
+                .get()
+                .expect("Input element should exist")
+                .dyn_ref::<web_sys::HtmlElement>()
+            {
+                input.set_inner_text("");
+            }
         })
     };
 
@@ -585,7 +591,6 @@ fn ApplyPatch() -> Html {
 
                 // apply patch
                 // source should be handled based on the parser type (json, plain)
-                web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Parser type: {:?}", &selected_parser_type)));
                 let mapped_src: Vec<(String, IndexedData)> = if *selected_parser_type == 1 {
                     let a = serde_json::from_str::<serde_json::Value>(&source_content);
                     if a.is_ok() {
@@ -595,7 +600,6 @@ fn ApplyPatch() -> Html {
                                 properties_indexed.push((key.to_string(), IndexedData::new(index as u8, value.to_string().trim().as_bytes().to_vec())));
                             }
                         }
-                        web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Previous: {:?}", &properties_indexed)));
                         properties_indexed
                     } else {
                         [("".to_string(), IndexedData::new(0, vec![]))].to_vec()
@@ -643,7 +647,6 @@ fn ApplyPatch() -> Html {
                             let mut result = "{ ".to_string();
                             if let Ok(serde_json::Value::Object(map)) = a {
                                 for (index, (key, value)) in map.iter().enumerate() {
-                                    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!("Index: {:?} key: {:?} value: {:?} patched: {:?}", &index, key, value, patched)));
                                     let b = patched.iter().find(|i|i.index == index as u8);
                                     if let Some(b) = b {
                                         let name = if let Some(n_changed) = &b.map_name_changed {
@@ -680,13 +683,13 @@ fn ApplyPatch() -> Html {
          <>
             <div class="section section-3">
                 <div class="padded full" style="flex-direction: column;">
-                    <div style="height: 40px;">
+                    <div style="display: flex;height: 20px;width: 100%;">
                         <select onchange={on_sample_select_change}>
                             { for samples.iter().enumerate().map(|(index, sample)| html! {
                                 <option value={sample.0} selected={index == 0}>{ &sample.1 }</option>
                             }) }
                         </select>
-                        <select onchange={on_parser_select_change}>
+                        <select style="margin-left: auto;" onchange={on_parser_select_change}>
                             { for parser_types.iter().enumerate().map(|(index, parser)| html! {
                                 <option value={parser.0} selected={index == *selected_parser_type}>{ &parser.1 }</option>
                             }) }
@@ -699,7 +702,7 @@ fn ApplyPatch() -> Html {
             </div>
             <div class="section section-3">
                 <div class="padded full" style="flex-direction: column;">
-                    <div style="height: 40px;">
+                    <div style="display: flex;height: 20px;width: 100%;">
                          <button onclick={on_apply_click} style="position: absolute; right: 10px; top: 10px;">{"Apply"}</button>
                     </div>
                     <div>{"Raw Patch:"}</div>
@@ -709,7 +712,7 @@ fn ApplyPatch() -> Html {
             </div>
             <div class="section section-3">
                 <div class="padded full" style="flex-direction: column;">
-                    <div style="height: 40px;">
+                    <div style="display: flex;height: 20px;width: 100%;">
 
                     </div>
                     <div>{"Result data:"}</div>
