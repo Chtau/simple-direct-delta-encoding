@@ -15,6 +15,10 @@ The library takes data as collection of `IndexedData` which contains an index an
 
 [Live demo](https://chtau.github.io/simple-direct-delta-encoding/)
 
+[Crate](https://crates.io/crates/simple-direct-delta-encoding)
+
+[Documentation](https://docs.rs/simple-direct-delta-encoding)
+
 ## Usage
 
 ### Create and apply patch
@@ -157,4 +161,13 @@ To run the web-page, use the following command:
 ```bash
 cd web-page
 trunk build --release --public-url simple-direct-delta-encoding/
+```
+
+## Build crate package
+
+First command is to check if the package can be published. The second command is to publish the package.
+
+```bash
+cargo publish -p simple-direct-delta-encoding --dry-run
+cargo publish -p simple-direct-delta-encoding
 ```

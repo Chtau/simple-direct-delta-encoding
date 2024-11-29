@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use delta_encoding::{IndexedData, SimpleDirectDeltaEncoding};
+use simple_direct_delta_encoding::{IndexedData, SimpleDirectDeltaEncoding};
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 use yew_router::prelude::*;

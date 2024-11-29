@@ -4,3 +4,13 @@ resolver = "2"
 members = [
     "delta-encoding", "web-page",
 ]
+
+[workspace.package]
+authors = ["Christoph Taucher <taucher.ch@gmail.com>"]
+description = "Custom delta encoding for blob and key value pairs."
+repository = "https://github.com/Chtau/simple-direct-delta-encoding"
+license = "MIT"
+homepage = "https://github.com/Chtau/simple-direct-delta-encoding"
+readme = "README.md"
+keywords = ["encoding", "delta-encoding"]
+categories = ["data-encoding"]
